@@ -181,8 +181,8 @@ public sealed class ChurnCalculator : IChurnCalculator
         string? includePattern,
         string? excludePattern)
     {
-        var include = CreateRegex(includePattern);
-        var exclude = CreateRegex(excludePattern);
+        var include = CreateRegexOrGlob(includePattern);
+        var exclude = CreateRegexOrGlob(excludePattern);
 
         return files
             .Where(file => include is null || include.IsMatch(file))
@@ -190,8 +190,56 @@ public sealed class ChurnCalculator : IChurnCalculator
             .ToList();
     }
 
-    private static Regex? CreateRegex(string? pattern) =>
-        string.IsNullOrWhiteSpace(pattern)
-            ? null
-            : new Regex(pattern, RegexOptions.CultureInvariant);
+    private static Regex? CreateRegexOrGlob(string? pattern)
+    {
+        if (string.IsNullOrWhiteSpace(pattern))
+            return null;
+
+        if (TryCreateRegex(pattern, out var regex))
+            return regex;
+
+        if (TryBuildGlobRegex(pattern, out var globRegexPattern))
+            return new Regex(globRegexPattern, RegexOptions.CultureInvariant);
+
+        throw new ArgumentException(
+            $"Invalid file path filter '{pattern}'. Use a valid regular expression or wildcard pattern like '*.cs'.",
+            nameof(pattern));
+    }
+
+    private static bool TryCreateRegex(string pattern, out Regex regex)
+    {
+        try
+        {
+            regex = new Regex(pattern, RegexOptions.CultureInvariant);
+            return true;
+        }
+        catch (ArgumentException)
+        {
+            regex = null!;
+            return false;
+        }
+    }
+
+    private static bool TryBuildGlobRegex(string pattern, out string globRegexPattern)
+    {
+        var candidate = pattern.Trim();
+
+        // Users sometimes prefix wildcard filters with '^' (regex anchor habit), e.g. ^*.cs.
+        if (candidate.StartsWith('^') && candidate.IndexOfAny(['*', '?']) >= 0)
+            candidate = candidate[1..];
+
+        if (candidate.IndexOfAny(['*', '?']) < 0)
+        {
+            globRegexPattern = string.Empty;
+            return false;
+        }
+
+        globRegexPattern = "^"
+            + Regex.Escape(candidate)
+                .Replace("\\*", ".*")
+                .Replace("\\?", ".")
+            + "$";
+
+        return true;
+    }
 }

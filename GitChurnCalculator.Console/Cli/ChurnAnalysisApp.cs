@@ -39,7 +39,7 @@ public sealed class ChurnAnalysisApp
             return;
         }
 
-        if (!ValidateRegex(include, "--include") || !ValidateRegex(exclude, "--exclude"))
+        if (!ValidateFilterPattern(include, "--include") || !ValidateFilterPattern(exclude, "--exclude"))
             return;
 
         LogAnalysisStart(repo, coverage);
@@ -163,7 +163,7 @@ public sealed class ChurnAnalysisApp
         Environment.ExitCode = 1;
     }
 
-    private static bool ValidateRegex(string? pattern, string optionName)
+    private static bool ValidateFilterPattern(string? pattern, string optionName)
     {
         if (string.IsNullOrWhiteSpace(pattern))
             return true;
@@ -175,7 +175,16 @@ public sealed class ChurnAnalysisApp
         }
         catch (ArgumentException ex)
         {
-            Fail($"Error: Invalid {optionName} regex '{pattern}': {ex.Message}");
+            var candidate = pattern.Trim();
+
+            // Accept shell-style wildcards as an alternative to regex, e.g. *.cs.
+            if (candidate.StartsWith('^') && candidate.IndexOfAny(['*', '?']) >= 0)
+                candidate = candidate[1..];
+
+            if (candidate.IndexOfAny(['*', '?']) >= 0)
+                return true;
+
+            Fail($"Error: Invalid {optionName} filter '{pattern}': {ex.Message}. Use a valid regex or wildcard (e.g. *.cs).");
             return false;
         }
     }
