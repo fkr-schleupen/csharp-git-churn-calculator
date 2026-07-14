@@ -1,6 +1,7 @@
 using GitChurnCalculator.Console.Reporting;
 using GitChurnCalculator.Models;
 using GitChurnCalculator.Services;
+using Spectre.Console;
 using System.Text.RegularExpressions;
 
 namespace GitChurnCalculator.Console.Cli;
@@ -75,7 +76,32 @@ public sealed class ChurnAnalysisApp
             ExcludePattern = exclude,
         };
 
-        var results = await _calculator.AnalyzeAsync(options);
+        IReadOnlyList<FileChurnResult> results;
+        var progressConsole = CreateProgressConsole();
+        if (progressConsole is not null)
+        {
+            results = await progressConsole.Progress()
+                .AutoClear(false)
+                .HideCompleted(false)
+                .Columns(new TaskDescriptionColumn(), new ProgressBarColumn(), new PercentageColumn(), new SpinnerColumn())
+                .StartAsync(async ctx =>
+                {
+                    var task = ctx.AddTask("Analyzing repository", maxValue: 3);
+                    var progress = new Progress<ChurnProgressUpdate>(update =>
+                    {
+                        task.Description = update.Description;
+                        task.Value = update.Completed;
+                        if (update.Total > 0)
+                            task.MaxValue = update.Total;
+                    });
+                    return await _calculator.AnalyzeAsync(options, progress);
+                });
+        }
+        else
+        {
+            results = await _calculator.AnalyzeAsync(options);
+        }
+
         global::System.Console.Error.WriteLine($"Found {results.Count} files with commit history.");
 
         if (coverage is not null)
@@ -117,7 +143,41 @@ public sealed class ChurnAnalysisApp
         global::System.Console.Error.WriteLine(
             $"Time series mode: {parsed.GranularityLower} chunks from {parsed.From:yyyy-MM-dd} to {parsed.To:yyyy-MM-dd} ({bucketEnds.Count} points).");
 
-        var points = await CollectTimeSeriesPointsAsync(repo, coverage, include, exclude, bucketEnds);
+        List<TimeSeriesPoint> points;
+        var progressConsole = CreateProgressConsole();
+        if (progressConsole is not null)
+        {
+            points = await progressConsole.Progress()
+                .AutoClear(false)
+                .HideCompleted(false)
+                .Columns(new TaskDescriptionColumn(), new ProgressBarColumn(), new PercentageColumn(), new SpinnerColumn())
+                .StartAsync(async ctx =>
+                {
+                    var overallTask = ctx.AddTask("Overall progress", maxValue: bucketEnds.Count);
+                    var bucketTask = ctx.AddTask("Analyzing...", maxValue: 3);
+
+                    Func<DateTime, IProgress<ChurnProgressUpdate>> progressFactory = asOf =>
+                        new Progress<ChurnProgressUpdate>(update =>
+                        {
+                            bucketTask.Description = $"[{asOf:yyyy-MM-dd}] {update.Description}";
+                            bucketTask.Value = update.Completed;
+                            if (update.Total > 0)
+                                bucketTask.MaxValue = update.Total;
+                            if (update.Completed == update.Total && update.Total > 0)
+                            {
+                                overallTask.Increment(1);
+                                bucketTask.Value = 0;
+                            }
+                        });
+
+                    return await CollectTimeSeriesPointsAsync(repo, coverage, include, exclude, bucketEnds, progressFactory);
+                });
+        }
+        else
+        {
+            points = await CollectTimeSeriesPointsAsync(repo, coverage, include, exclude, bucketEnds);
+        }
+
         global::System.Console.Error.WriteLine($"Found data across {points.Count} time points.");
 
         var outputText = tsGenerator.Generate(points, repo.FullName);
@@ -129,12 +189,12 @@ public sealed class ChurnAnalysisApp
         FileInfo? coverage,
         string? include,
         string? exclude,
-        IReadOnlyList<DateTime> bucketEnds)
+        IReadOnlyList<DateTime> bucketEnds,
+        Func<DateTime, IProgress<ChurnProgressUpdate>>? progressFactory = null)
     {
         var points = new List<TimeSeriesPoint>(bucketEnds.Count);
         foreach (var asOf in bucketEnds)
         {
-            global::System.Console.Error.WriteLine($"  Analyzing as of {asOf:yyyy-MM-dd}...");
             var options = new ChurnAnalysisOptions
             {
                 RepositoryPath = repo.FullName,
@@ -143,7 +203,7 @@ public sealed class ChurnAnalysisApp
                 ExcludePattern = exclude,
                 AsOf = asOf,
             };
-            var results = await _calculator.AnalyzeAsync(options);
+            var results = await _calculator.AnalyzeAsync(options, progressFactory?.Invoke(asOf));
             points.Add(new TimeSeriesPoint { AsOf = asOf, Files = results });
         }
 
@@ -156,6 +216,14 @@ public sealed class ChurnAnalysisApp
         if (coverage is not null)
             global::System.Console.Error.WriteLine($"Using coverage file: {coverage.FullName}");
     }
+
+    private static IAnsiConsole? CreateProgressConsole() =>
+        global::System.Console.IsErrorRedirected
+            ? null
+            : AnsiConsole.Create(new AnsiConsoleSettings
+            {
+                Out = new AnsiConsoleOutput(global::System.Console.Error),
+            });
 
     private static void Fail(string message)
     {

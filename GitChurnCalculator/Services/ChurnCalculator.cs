@@ -16,6 +16,7 @@ public sealed class ChurnCalculator : IChurnCalculator
 
     public async Task<IReadOnlyList<FileChurnResult>> AnalyzeAsync(
         ChurnAnalysisOptions options,
+        IProgress<ChurnProgressUpdate>? progress = null,
         CancellationToken ct = default)
     {
         var repoPath = options.RepositoryPath;
@@ -24,11 +25,13 @@ public sealed class ChurnCalculator : IChurnCalculator
         var thirtyDaysAgo = now.AddDays(-30);
         var yearAgo = now.AddDays(-365);
 
+        progress?.Report(new ChurnProgressUpdate("Fetching tracked files", 0, 3));
         var trackedFiles = ApplyPathFilters(
             await _gitDataProvider.GetTrackedFilesAsync(repoPath, ct),
             options.IncludePattern,
             options.ExcludePattern);
 
+        progress?.Report(new ChurnProgressUpdate("Running git queries", 1, 3));
         // Run independent git queries in parallel.
         // When AsOf is set, use date-bounded variants so history is anchored to that point in time.
         Task<Dictionary<string, int>> commitCountsTask;
@@ -98,6 +101,7 @@ public sealed class ChurnCalculator : IChurnCalculator
         var lineTotals = lineTotalsTask.Result;
         var totalLinesByFile = totalLinesTask.Result ?? new Dictionary<string, int>(StringComparer.Ordinal);
 
+        progress?.Report(new ChurnProgressUpdate("Processing results", 2, 3));
         // Parse coverage if provided
         Dictionary<string, double>? coverageMap = null;
         if (!string.IsNullOrEmpty(options.CoverageFilePath))
@@ -165,6 +169,7 @@ public sealed class ChurnCalculator : IChurnCalculator
         }
 
         results.Sort((a, b) => b.ChurnRiskScore.CompareTo(a.ChurnRiskScore));
+        progress?.Report(new ChurnProgressUpdate("Complete", 3, 3));
         return results;
     }
 
