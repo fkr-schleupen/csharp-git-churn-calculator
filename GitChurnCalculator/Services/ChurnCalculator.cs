@@ -195,11 +195,11 @@ public sealed class ChurnCalculator : IChurnCalculator
         if (string.IsNullOrWhiteSpace(pattern))
             return null;
 
-        if (TryCreateRegex(pattern, out var regex))
-            return regex;
-
         if (TryBuildGlobRegex(pattern, out var globRegexPattern))
             return new Regex(globRegexPattern, RegexOptions.CultureInvariant);
+
+        if (TryCreateRegex(pattern, out var regex))
+            return regex;
 
         throw new ArgumentException(
             $"Invalid file path filter '{pattern}'. Use a valid regular expression or wildcard pattern like '*.cs'.",
@@ -224,15 +224,20 @@ public sealed class ChurnCalculator : IChurnCalculator
     {
         var candidate = pattern.Trim();
 
-        // Users sometimes prefix wildcard filters with '^' (regex anchor habit), e.g. ^*.cs.
-        if (candidate.StartsWith('^') && candidate.IndexOfAny(['*', '?']) >= 0)
-            candidate = candidate[1..];
-
-        if (candidate.IndexOfAny(['*', '?']) < 0)
+        // Treat shell-style wildcard patterns as globs first.
+        // This avoids regex edge cases like '^*.cs' (valid regex in .NET but unintended for file extension filtering).
+        if (!LooksLikeGlobPattern(candidate))
         {
             globRegexPattern = string.Empty;
             return false;
         }
+
+        // Users sometimes prefix wildcard filters with '^' (regex anchor habit), e.g. ^*.cs.
+        if (candidate.StartsWith('^'))
+            candidate = candidate[1..];
+
+        if (candidate.EndsWith('$'))
+            candidate = candidate[..^1];
 
         globRegexPattern = "^"
             + Regex.Escape(candidate)
@@ -241,5 +246,23 @@ public sealed class ChurnCalculator : IChurnCalculator
             + "$";
 
         return true;
+    }
+
+    private static bool LooksLikeGlobPattern(string pattern)
+    {
+        if (pattern.IndexOfAny(['*', '?']) < 0)
+            return false;
+
+        var normalized = pattern;
+        if (normalized.StartsWith('^'))
+            normalized = normalized[1..];
+        if (normalized.EndsWith('$'))
+            normalized = normalized[..^1];
+
+        if (normalized.Length == 0)
+            return false;
+
+        // Regex-specific syntax indicates the user likely intended regex, not wildcard.
+        return normalized.IndexOfAny(['[', ']', '(', ')', '{', '}', '|', '+', '\\']) < 0;
     }
 }

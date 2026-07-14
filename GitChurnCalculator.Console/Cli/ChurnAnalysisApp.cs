@@ -168,6 +168,9 @@ public sealed class ChurnAnalysisApp
         if (string.IsNullOrWhiteSpace(pattern))
             return true;
 
+        if (LooksLikeGlobPattern(pattern.Trim()))
+            return true;
+
         try
         {
             _ = new Regex(pattern, RegexOptions.CultureInvariant);
@@ -175,17 +178,25 @@ public sealed class ChurnAnalysisApp
         }
         catch (ArgumentException ex)
         {
-            var candidate = pattern.Trim();
-
-            // Accept shell-style wildcards as an alternative to regex, e.g. *.cs.
-            if (candidate.StartsWith('^') && candidate.IndexOfAny(['*', '?']) >= 0)
-                candidate = candidate[1..];
-
-            if (candidate.IndexOfAny(['*', '?']) >= 0)
-                return true;
-
             Fail($"Error: Invalid {optionName} filter '{pattern}': {ex.Message}. Use a valid regex or wildcard (e.g. *.cs).");
             return false;
         }
+    }
+
+    private static bool LooksLikeGlobPattern(string pattern)
+    {
+        if (pattern.IndexOfAny(['*', '?']) < 0)
+            return false;
+
+        var normalized = pattern;
+        if (normalized.StartsWith('^'))
+            normalized = normalized[1..];
+        if (normalized.EndsWith('$'))
+            normalized = normalized[..^1];
+
+        if (normalized.Length == 0)
+            return false;
+
+        return normalized.IndexOfAny(['[', ']', '(', ')', '{', '}', '|', '+', '\\']) < 0;
     }
 }

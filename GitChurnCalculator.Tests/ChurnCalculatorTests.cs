@@ -225,13 +225,14 @@ public class ChurnCalculatorTests
         var repoPath = "/fake/repo";
 
         gitProvider.GetTrackedFilesAsync(repoPath, Arg.Any<CancellationToken>())
-            .Returns(new List<string> { "src/A.cs", "tests/A.cs", "README.md" });
+            .Returns(new List<string> { "src/A.cs", "tests/A.cs", "README.md", "GitChurnCalculator.csproj" });
 
         var commitCounts = new Dictionary<string, int>
         {
             ["src/A.cs"] = 10,
             ["tests/A.cs"] = 10,
             ["README.md"] = 10,
+            ["GitChurnCalculator.csproj"] = 10,
         };
         gitProvider.GetCommitCountsAsync(repoPath, Arg.Any<CancellationToken>()).Returns(commitCounts);
 
@@ -241,6 +242,7 @@ public class ChurnCalculatorTests
             ["src/A.cs"] = now.AddDays(-14),
             ["tests/A.cs"] = now.AddDays(-14),
             ["README.md"] = now.AddDays(-14),
+            ["GitChurnCalculator.csproj"] = now.AddDays(-14),
         };
         gitProvider.GetFirstCommitDatesAsync(repoPath, Arg.Any<CancellationToken>()).Returns(dates);
         gitProvider.GetLastCommitDatesAsync(repoPath, Arg.Any<CancellationToken>()).Returns(dates);
@@ -250,6 +252,7 @@ public class ChurnCalculatorTests
             ["src/A.cs"] = 1,
             ["tests/A.cs"] = 1,
             ["README.md"] = 1,
+            ["GitChurnCalculator.csproj"] = 1,
         };
         gitProvider.GetUniqueAuthorCountsAsync(repoPath, Arg.Any<CancellationToken>()).Returns(authors);
 
