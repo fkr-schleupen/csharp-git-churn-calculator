@@ -85,7 +85,25 @@ public interface IGitDataProvider
     Task<Dictionary<string, int>> GetTotalLinesAsync(string repoPath, CancellationToken ct = default);
 
     /// <summary>
+    /// Returns total line counts at repository HEAD for the provided git-relative paths.
+    /// </summary>
+    Task<Dictionary<string, int>> GetTotalLinesForFilesAsync(
+        string repoPath,
+        IReadOnlyList<string> gitRelativePaths,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Returns per-file total line counts at the latest commit on or before <paramref name="until"/>.
     /// </summary>
     Task<Dictionary<string, int>> GetTotalLinesUntilAsync(string repoPath, DateTime until, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns total line counts at the latest commit on or before <paramref name="until"/>
+    /// for the provided git-relative paths.
+    /// </summary>
+    Task<Dictionary<string, int>> GetTotalLinesForFilesUntilAsync(
+        string repoPath,
+        IReadOnlyList<string> gitRelativePaths,
+        DateTime until,
+        CancellationToken ct = default);
 }

@@ -58,7 +58,7 @@ public sealed class ChurnCalculator : IChurnCalculator
             authors365Task = _gitDataProvider.GetUniqueAuthorCountsSinceUntilAsync(repoPath, yearAgo, now, ct);
             lineTotalsTask = _gitDataProvider.GetLineChangeTotalsUntilAsync(repoPath, now, ct);
             totalLinesTask =
-                _gitDataProvider.GetTotalLinesUntilAsync(repoPath, now, ct)
+                _gitDataProvider.GetTotalLinesForFilesUntilAsync(repoPath, trackedFiles, now, ct)
                 ?? Task.FromResult(new Dictionary<string, int>(StringComparer.Ordinal));
         }
         else
@@ -75,7 +75,7 @@ public sealed class ChurnCalculator : IChurnCalculator
             authors365Task = _gitDataProvider.GetUniqueAuthorCountsSinceAsync(repoPath, yearAgo, ct);
             lineTotalsTask = _gitDataProvider.GetLineChangeTotalsAsync(repoPath, ct);
             totalLinesTask =
-                _gitDataProvider.GetTotalLinesAsync(repoPath, ct)
+                _gitDataProvider.GetTotalLinesForFilesAsync(repoPath, trackedFiles, ct)
                 ?? Task.FromResult(new Dictionary<string, int>(StringComparer.Ordinal));
         }
 

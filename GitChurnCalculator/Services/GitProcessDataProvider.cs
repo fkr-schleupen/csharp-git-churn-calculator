@@ -195,7 +195,13 @@ public sealed class GitProcessDataProvider : IGitDataProvider
     }
 
     public Task<Dictionary<string, int>> GetTotalLinesAsync(string repoPath, CancellationToken ct = default) =>
-        GetTotalLinesAtRevisionAsync(repoPath, "HEAD", ct);
+        GetTotalLinesAtRevisionAsync(repoPath, "HEAD", null, ct);
+
+    public Task<Dictionary<string, int>> GetTotalLinesForFilesAsync(
+        string repoPath,
+        IReadOnlyList<string> gitRelativePaths,
+        CancellationToken ct = default) =>
+        GetTotalLinesAtRevisionAsync(repoPath, "HEAD", gitRelativePaths, ct);
 
     public async Task<Dictionary<string, int>> GetTotalLinesUntilAsync(string repoPath, DateTime until, CancellationToken ct = default)
     {
@@ -207,7 +213,24 @@ public sealed class GitProcessDataProvider : IGitDataProvider
         if (rev.Length == 0)
             return new Dictionary<string, int>(StringComparer.Ordinal);
 
-        return await GetTotalLinesAtRevisionAsync(repoPath, rev, ct);
+        return await GetTotalLinesAtRevisionAsync(repoPath, rev, null, ct);
+    }
+
+    public async Task<Dictionary<string, int>> GetTotalLinesForFilesUntilAsync(
+        string repoPath,
+        IReadOnlyList<string> gitRelativePaths,
+        DateTime until,
+        CancellationToken ct = default)
+    {
+        var rev = (await RunGitAsync(
+            repoPath,
+            $"rev-list -1 --before=\"{FormatLogDate(until)} 23:59:59\" HEAD",
+            ct)).Trim();
+
+        if (rev.Length == 0)
+            return new Dictionary<string, int>(StringComparer.Ordinal);
+
+        return await GetTotalLinesAtRevisionAsync(repoPath, rev, gitRelativePaths, ct);
     }
 
     /// <summary>
@@ -249,18 +272,31 @@ public sealed class GitProcessDataProvider : IGitDataProvider
     private static async Task<Dictionary<string, int>> GetTotalLinesAtRevisionAsync(
         string repoPath,
         string revision,
+        IReadOnlyList<string>? candidatePaths,
         CancellationToken ct)
     {
-        var filesOutput = await RunGitAsync(
-            repoPath,
-            $"-c core.quotepath=false ls-tree -r --name-only --full-tree {revision}",
-            ct);
+        List<string> paths;
+        if (candidatePaths is not null)
+        {
+            paths = candidatePaths
+                .Where(static p => !string.IsNullOrWhiteSpace(p))
+                .Select(static p => p.Trim())
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+        }
+        else
+        {
+            var filesOutput = await RunGitAsync(
+                repoPath,
+                $"-c core.quotepath=false ls-tree -r --name-only --full-tree {revision}",
+                ct);
 
-        var paths = filesOutput
-            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
-            .Select(static line => line.Trim())
-            .Where(static line => line.Length > 0)
-            .ToList();
+            paths = filesOutput
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                .Select(static line => line.Trim())
+                .Where(static line => line.Length > 0)
+                .ToList();
+        }
 
         if (paths.Count == 0)
             return new Dictionary<string, int>(StringComparer.Ordinal);
@@ -294,17 +330,21 @@ public sealed class GitProcessDataProvider : IGitDataProvider
 
         var errorTask = process.StandardError.ReadToEndAsync(ct);
 
-        await using (var stdin = process.StandardInput)
-        {
-            foreach (var spec in objectSpecs)
-                await stdin.WriteLineAsync(spec.AsMemory(), ct);
-        }
+        var specs = objectSpecs.ToList();
+        if (specs.Count != paths.Count)
+            throw new InvalidOperationException("Mismatch between object specs and path count for cat-file batching.");
+
+        await using var stdin = process.StandardInput;
+        stdin.AutoFlush = true;
 
         var stdout = process.StandardOutput.BaseStream;
         var result = new Dictionary<string, int>(paths.Count, StringComparer.Ordinal);
 
-        foreach (var path in paths)
+        for (var i = 0; i < paths.Count; i++)
         {
+            var path = paths[i];
+            await stdin.WriteLineAsync(specs[i].AsMemory(), ct);
+
             var header = await ReadAsciiLineAsync(stdout, ct)
                 ?? throw new InvalidOperationException("Unexpected end of git cat-file output.");
 
@@ -323,6 +363,8 @@ public sealed class GitProcessDataProvider : IGitDataProvider
 
             result[path] = await CountLinesFromObjectPayloadAsync(stdout, size, ct);
         }
+
+        stdin.Close();
 
         await process.WaitForExitAsync(ct);
         if (process.ExitCode != 0)
