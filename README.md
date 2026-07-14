@@ -21,8 +21,8 @@ dotnet run --project GitChurnCalculator.Console -- <repo-path> [options]
 | `--format <csv\|json\|html\|graph>` | `csv` | Output format (`html` = Bootstrap-styled table page, `graph` = D3 time-series chart) |
 | `--coverage <path>` | *(none)* | Path to a Cobertura XML coverage file |
 | `--output <path>` | stdout | Write output to a file instead of stdout |
-| `--include <regex>` | *(none)* | Only include repo-relative file paths matching this regular expression |
-| `--exclude <regex>` | *(none)* | Exclude repo-relative file paths matching this regular expression |
+| `--include <pattern>` | *(none)* | Only include repo-relative file paths matching this regular expression or wildcard pattern (for example `*.cs`) |
+| `--exclude <pattern>` | *(none)* | Exclude repo-relative file paths matching this regular expression or wildcard pattern |
 | `--series <week\|month>` | *(none)* | Produce a time series by stepping in week or month chunks. Requires `--from`. |
 | `--from <yyyy-MM-dd>` | *(none)* | Start date for time series (inclusive). Required when `--series` is used. |
 | `--to <yyyy-MM-dd>` | today | End date for time series (inclusive). Defaults to today when `--series` is used. |
@@ -58,6 +58,13 @@ Limit analysis to selected paths:
 ```bash
 dotnet run --project GitChurnCalculator.Console -- /path/to/repo \
   --include "^(src|tests)/.*\\.cs$" --exclude "(bin|obj|coverage-report)/"
+```
+
+Or use wildcard patterns:
+
+```bash
+dotnet run --project GitChurnCalculator.Console -- /path/to/repo \
+  --include "*.cs" --exclude "*/Generated/*"
 ```
 
 ### Time series

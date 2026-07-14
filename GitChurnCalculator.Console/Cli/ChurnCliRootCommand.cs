@@ -27,11 +27,11 @@ public static class ChurnCliRootCommand
 
         var includeOption = new Option<string?>(
             "--include",
-            description: "Only include repo-relative file paths matching this regular expression.");
+            description: "Only include repo-relative file paths matching this regex or wildcard pattern (e.g. *.cs).");
 
         var excludeOption = new Option<string?>(
             "--exclude",
-            description: "Exclude repo-relative file paths matching this regular expression.");
+            description: "Exclude repo-relative file paths matching this regex or wildcard pattern (e.g. */Generated/*).");
 
         var seriesOption = new Option<string?>(
             "--series",

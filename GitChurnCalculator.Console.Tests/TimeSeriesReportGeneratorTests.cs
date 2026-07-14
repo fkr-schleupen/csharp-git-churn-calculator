@@ -201,6 +201,17 @@ public class TimeSeriesReportGeneratorTests
         // Two <details> sections
         var detailsCount = CountOccurrences(output, "<details");
         Assert.Equal(2, detailsCount);
+
+        // Per-section filter controls are present for table filtering
+        Assert.Contains("data-filter-scope", output);
+        Assert.Contains("data-table-filters", output);
+        Assert.Contains("data-filter-file", output);
+        Assert.Contains("data-filter-coverage-op", output);
+        Assert.Contains("data-filter-coverage-value", output);
+        Assert.Contains("data-filter-churn-op", output);
+        Assert.Contains("data-filter-churn-value", output);
+        Assert.Contains("data-filter-reset", output);
+        Assert.Contains("const applyFilters = () =>", output);
     }
 
     [Fact]

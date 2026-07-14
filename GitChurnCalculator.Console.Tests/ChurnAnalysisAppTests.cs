@@ -74,7 +74,7 @@ public class ChurnAnalysisAppTests
     }
 
     [Fact]
-    public async Task Snapshot_InvalidIncludeRegex_SetsExitCodeOne()
+    public async Task Snapshot_InvalidIncludeFilter_SetsExitCodeOne()
     {
         var prev = SaveExitCode();
         try
@@ -88,7 +88,7 @@ public class ChurnAnalysisAppTests
                 "csv",
                 null,
                 null,
-                "[",
+                "[abc",
                 null,
                 null,
                 null,

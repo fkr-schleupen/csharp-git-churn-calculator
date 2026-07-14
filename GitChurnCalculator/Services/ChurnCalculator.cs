@@ -123,9 +123,9 @@ public sealed class ChurnCalculator : IChurnCalculator
 
             var totalUniqueAuthors = authorsAll.GetValueOrDefault(file, 0);
 
-            double? coveragePercent = coverageMap?.GetValueOrDefault(file, 0.0);
-            if (coverageMap is null)
-                coveragePercent = null;
+            double? coveragePercent = null;
+            if (coverageMap is not null && coverageMap.TryGetValue(file, out var mappedCoverage))
+                coveragePercent = mappedCoverage;
 
             var churnRiskScore = CalculateChurnRiskScore(
                 changesPerWeek, totalUniqueAuthors, coveragePercent);
@@ -181,8 +181,8 @@ public sealed class ChurnCalculator : IChurnCalculator
         string? includePattern,
         string? excludePattern)
     {
-        var include = CreateRegex(includePattern);
-        var exclude = CreateRegex(excludePattern);
+        var include = CreateRegexOrGlob(includePattern);
+        var exclude = CreateRegexOrGlob(excludePattern);
 
         return files
             .Where(file => include is null || include.IsMatch(file))
@@ -190,8 +190,79 @@ public sealed class ChurnCalculator : IChurnCalculator
             .ToList();
     }
 
-    private static Regex? CreateRegex(string? pattern) =>
-        string.IsNullOrWhiteSpace(pattern)
-            ? null
-            : new Regex(pattern, RegexOptions.CultureInvariant);
+    private static Regex? CreateRegexOrGlob(string? pattern)
+    {
+        if (string.IsNullOrWhiteSpace(pattern))
+            return null;
+
+        if (TryBuildGlobRegex(pattern, out var globRegexPattern))
+            return new Regex(globRegexPattern, RegexOptions.CultureInvariant);
+
+        if (TryCreateRegex(pattern, out var regex))
+            return regex;
+
+        throw new ArgumentException(
+            $"Invalid file path filter '{pattern}'. Use a valid regular expression or wildcard pattern like '*.cs'.",
+            nameof(pattern));
+    }
+
+    private static bool TryCreateRegex(string pattern, out Regex regex)
+    {
+        try
+        {
+            regex = new Regex(pattern, RegexOptions.CultureInvariant);
+            return true;
+        }
+        catch (ArgumentException)
+        {
+            regex = null!;
+            return false;
+        }
+    }
+
+    private static bool TryBuildGlobRegex(string pattern, out string globRegexPattern)
+    {
+        var candidate = pattern.Trim();
+
+        // Treat shell-style wildcard patterns as globs first.
+        // This avoids regex edge cases like '^*.cs' (valid regex in .NET but unintended for file extension filtering).
+        if (!LooksLikeGlobPattern(candidate))
+        {
+            globRegexPattern = string.Empty;
+            return false;
+        }
+
+        // Users sometimes prefix wildcard filters with '^' (regex anchor habit), e.g. ^*.cs.
+        if (candidate.StartsWith('^'))
+            candidate = candidate[1..];
+
+        if (candidate.EndsWith('$'))
+            candidate = candidate[..^1];
+
+        globRegexPattern = "^"
+            + Regex.Escape(candidate)
+                .Replace("\\*", ".*")
+                .Replace("\\?", ".")
+            + "$";
+
+        return true;
+    }
+
+    private static bool LooksLikeGlobPattern(string pattern)
+    {
+        if (pattern.IndexOfAny(['*', '?']) < 0)
+            return false;
+
+        var normalized = pattern;
+        if (normalized.StartsWith('^'))
+            normalized = normalized[1..];
+        if (normalized.EndsWith('$'))
+            normalized = normalized[..^1];
+
+        if (normalized.Length == 0)
+            return false;
+
+        // Regex-specific syntax indicates the user likely intended regex, not wildcard.
+        return normalized.IndexOfAny(['[', ']', '(', ')', '{', '}', '|', '+', '\\']) < 0;
+    }
 }

@@ -39,7 +39,7 @@ public sealed class ChurnAnalysisApp
             return;
         }
 
-        if (!ValidateRegex(include, "--include") || !ValidateRegex(exclude, "--exclude"))
+        if (!ValidateFilterPattern(include, "--include") || !ValidateFilterPattern(exclude, "--exclude"))
             return;
 
         LogAnalysisStart(repo, coverage);
@@ -77,6 +77,14 @@ public sealed class ChurnAnalysisApp
 
         var results = await _calculator.AnalyzeAsync(options);
         global::System.Console.Error.WriteLine($"Found {results.Count} files with commit history.");
+
+        if (coverage is not null)
+        {
+            var matchedCoverageCount = results.Count(r => r.CoveragePercent.HasValue);
+            var nonZeroCoverageCount = results.Count(r => r.CoveragePercent is > 0);
+            global::System.Console.Error.WriteLine(
+                $"Coverage mapped to {matchedCoverageCount} files ({nonZeroCoverageCount} with non-zero coverage).");
+        }
 
         var text = generator.Generate(results, repo.FullName);
         await ChurnOutputWriter.WriteAsync(output, text);
@@ -155,9 +163,12 @@ public sealed class ChurnAnalysisApp
         Environment.ExitCode = 1;
     }
 
-    private static bool ValidateRegex(string? pattern, string optionName)
+    private static bool ValidateFilterPattern(string? pattern, string optionName)
     {
         if (string.IsNullOrWhiteSpace(pattern))
+            return true;
+
+        if (LooksLikeGlobPattern(pattern.Trim()))
             return true;
 
         try
@@ -167,8 +178,25 @@ public sealed class ChurnAnalysisApp
         }
         catch (ArgumentException ex)
         {
-            Fail($"Error: Invalid {optionName} regex '{pattern}': {ex.Message}");
+            Fail($"Error: Invalid {optionName} filter '{pattern}': {ex.Message}. Use a valid regex or wildcard (e.g. *.cs).");
             return false;
         }
+    }
+
+    private static bool LooksLikeGlobPattern(string pattern)
+    {
+        if (pattern.IndexOfAny(['*', '?']) < 0)
+            return false;
+
+        var normalized = pattern;
+        if (normalized.StartsWith('^'))
+            normalized = normalized[1..];
+        if (normalized.EndsWith('$'))
+            normalized = normalized[..^1];
+
+        if (normalized.Length == 0)
+            return false;
+
+        return normalized.IndexOfAny(['[', ']', '(', ')', '{', '}', '|', '+', '\\']) < 0;
     }
 }
